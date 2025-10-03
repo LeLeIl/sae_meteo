@@ -1,50 +1,60 @@
-// --- Cache simple en memoria del servidor Netlify ---
-let LAST = null;      // {temperature, humidity, timeISO}
-let LAST_TS = 0;      // timestamp en ms
-const CACHE_MS = 10000; // 10 s mínimo entre llamadas reales a TTN
 export async function handler() {
   try {
-    // Si tenemos datos recientes, devolverlos sin consultar TTN
-    if (LAST && (Date.now() - LAST_TS) < CACHE_MS) {
-      return {
-        statusCode: 200,
-        headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
-        body: JSON.stringify(LAST),
-      };
-    }
     const BASE = process.env.TTS_BASE || 'https://eu1.cloud.thethings.network';
     const APP  = process.env.TTS_APP;
-    const KEY  = process.env.TTS_KEY; // token completo (empieza por NNSXS.)
+    const KEY  = process.env.TTS_KEY;
     if (!APP || !KEY) {
       return { statusCode: 500, body: JSON.stringify({ error: 'Missing TTS_APP or TTS_KEY env var' }) };
     }
-    // Consulta al almacenamiento (último uplink)
-    const url = `${BASE}/api/v3/applications/${encodeURIComponent(APP)}/packages/storage/uplink_message?limit=1`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${KEY}`, Accept: 'application/json' }
-    });
-    if (!res.ok) {
+    // helper para llamar al API de Storage
+    async function callStorage(path) {
+      const url = `${BASE}/api/v3/as/applications/${encodeURIComponent(APP)}/packages/storage/${path}`;
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${KEY}`,
+          'Accept': 'application/json'
+        }
+      });
       const text = await res.text();
-      return { statusCode: res.status, body: JSON.stringify({ error: `TTS ${res.status}`, details: text }) };
+      if (!res.ok) {
+        throw new Error(`TTS ${res.status} ${res.statusText} :: ${text}`);
+      }
+      return JSON.parse(text);
     }
-    const data = await res.json();
-    const list = Array.isArray(data) ? data : (data?.result ? data.result : data);
-    const last = list?.[0] ?? list?.result?.[0] ?? list;
-    // Puede venir en distintas rutas según versión
-    const up   = last?.result?.uplink_message || last?.uplink_message || last;
-    const dec  = up?.decoded_payload || up?.payload?.fields || {};
-    let temperature = (typeof dec.temperature === 'number') ? dec.temperature : null;
-    let humidity    = (typeof dec.humidity    === 'number') ? dec.humidity    : null;
-    const timeISO   = up?.received_at || last?.received_at || new Date().toISOString();
-    // Guarda en caché y responde
-    LAST = { temperature, humidity, timeISO };
-    LAST_TS = Date.now();
+    // 1º intento: endpoint genérico de mensajes (más estable)
+    let data;
+    try {
+      data = await callStorage('messages?limit=1&order=desc');
+    } catch (e) {
+      // 2º intento (algunos clusters exponen esta ruta)
+      data = await callStorage('uplink_message?limit=1');
+    }
+    // Normaliza la forma (lista o objeto)
+    const item = Array.isArray(data) ? data[0] : (data.result?.[0] ?? data);
+    // Distintas ubicaciones posibles del último uplink
+    const up  = item?.result?.uplink_message || item?.uplink_message || item;
+    const dec = up?.decoded_payload || up?.payload_fields || {};
+    // Tolerante a formatos: temperature/humidity en raíz o en dec.data
+    const rawTemp = (typeof dec.temperature === 'number')
+                      ? dec.temperature
+                      : (typeof dec.data?.temperature === 'number' ? dec.data.temperature : null);
+    const rawHum  = (typeof dec.humidity === 'number')
+                      ? dec.humidity
+                      : (typeof dec.data?.humidity === 'number' ? dec.data.humidity : null);
+    // Si tu formatter entrega décimas (e.g. 218.5 = 21.85 ºC), ajusta aquí:
+    const temperature = (rawTemp == null) ? null
+                        : (rawTemp > 200 ? Math.round(rawTemp) / 10 : rawTemp);
+    const humidity    = (rawHum  == null) ? null
+                        : (rawHum  > 200 ? Math.round(rawHum)  / 10 : rawHum);
+    const timeISO = up?.received_at || item?.received_at || new Date().toISOString();
     return {
       statusCode: 200,
       headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
-      body: JSON.stringify(LAST),
+      body: JSON.stringify({ temperature, humidity, timeISO })
     };
   } catch (err) {
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 }
+
+CHAKIB
