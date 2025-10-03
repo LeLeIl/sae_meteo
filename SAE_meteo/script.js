@@ -1,32 +1,22 @@
-const tempEl = document.getElementById('temp');
-const ctx = document.getElementById('chart').getContext('2d');
-const data = { 
-  labels: [], 
-  datasets: [{ label: 'Temperature (°C)', data: [] }] 
-};
-const chart = new chart(ctx, { 
-  type: 'line', 
-  data, 
-  options: { animation: false, responsive: true } 
-});
+
 async function fetchLatest() {
   try {
     const r = await fetch('/.netlify/functions/latest', { cache: 'no-store' });
-    const json = await r.json();  // ← convierte a JSON
-    if (json && typeof json.temperature === 'number') {
-      tempEl.textContent = json.temperature.toFixed(1);
-      data.labels.push(new Date(json.timeISO).toLocaleTimeString());
-      data.datasets[0].data.push(json.temperature);
-      if (data.labels.length > 100) {
-        data.labels.shift(); 
-        data.datasets[0].data.shift();
-      }
-      chart.update();
-    }
-  } catch (err) {
-    console.error("Error en fetchLatest:", err);
+    const json = await r.json(); // { temperature, humidity, timeISO }
+    document.getElementById('temp').textContent = 
+      (typeof json.temperature === 'number') ? json.temperature.toFixed(1) : '--';
+    document.getElementById('hum').textContent  = 
+      (typeof json.humidity === 'number') ? json.humidity.toFixed(1) : '--';
+    document.getElementById('time').textContent = 
+      json.timeISO ? new Date(json.timeISO).toLocaleString() : '--';
+  } catch (e) {
+    document.getElementById('temp').textContent = '--';
+    document.getElementById('hum').textContent  = '--';
+    document.getElementById('time').textContent = 'Error';
   }
 }
-// Polling cada 5 segundos
-setInterval(fetchLatest, 5000);
+// botón manual + actualización periódica
+document.getElementById('refresh').addEventListener('click', fetchLatest);
 fetchLatest();
+setInterval(fetchLatest, 5000);
+ 
