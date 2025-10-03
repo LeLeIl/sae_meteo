@@ -1,7 +1,6 @@
 // netlify/functions/latest.js
-// ⇨ Función Netlify que lee el último uplink del Storage Integration de TTN
-//    y devuelve { temperature, humidity, timeISO }.
-const fetch = (...args) => import('node-fetch').then(({default: f}) => f(...args));
+// Lee el último uplink del Storage de TTN y devuelve { temperature, humidity, timeISO }.
+// (Usa fetch global, sin node-fetch)
 exports.handler = async function () {
   try {
     const BASE = process.env.TTS_BASE || 'https://eu1.cloud.thethings.network';
@@ -13,7 +12,6 @@ exports.handler = async function () {
         body: JSON.stringify({ error: 'Missing TTS_APP or TTS_KEY env var' })
       };
     }
-    // Último uplink almacenado en TTN Storage
     const url = `${BASE}/api/v3/as/applications/${encodeURIComponent(APP)}/packages/storage/uplink_message?limit=1`;
     const res = await fetch(url, {
       headers: {
@@ -28,32 +26,25 @@ exports.handler = async function () {
         body: JSON.stringify({ error: `TTS ${res.status} ${res.statusText}`, details: text })
       };
     }
-    // La Storage API puede devolver array u objeto con .result
     const raw = await res.json();
     const list =
-      Array.isArray(raw)      ? raw :
+      Array.isArray(raw) ? raw :
       Array.isArray(raw.data) ? raw.data :
       Array.isArray(raw.result) ? raw.result :
       (raw.data && Array.isArray(raw.data.result)) ? raw.data.result :
       (raw.result && Array.isArray(raw.result.result)) ? raw.result.result :
       [];
     const last = list[0] || raw?.result?.[0] || raw?.data?.result?.[0] || raw;
-    // Donde viene el uplink real
     const up =
       last?.result?.uplink_message ||
       last?.uplink_message ||
       last;
-    // Campos decodificados pueden venir en varios sitios:
-    // - up.decoded_payload
-    // - up.payload.fields
-    // - ...o anidados bajo .data
     const dec =
       up?.decoded_payload ||
       up?.payload?.fields ||
       up?.decoded_payload?.data ||
       up?.payload?.fields?.data ||
       {};
-    // Acepta tanto number como string ("21.8")
     const pick = (a, b) => a !== undefined ? a : b;
     const tRaw = pick(dec.temperature, dec.data?.temperature);
     const hRaw = pick(dec.humidity,    dec.data?.humidity);
@@ -70,9 +61,6 @@ exports.handler = async function () {
       body: JSON.stringify({ temperature, humidity, timeISO })
     };
   } catch (err) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: err.message })
-    };
+    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 };
