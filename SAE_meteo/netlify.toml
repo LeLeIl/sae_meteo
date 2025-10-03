@@ -1,8 +1,8 @@
 [build]
   publish = "SAE_meteo"
   functions = "SAE_meteo/netlify/functions"
-# Evita cacheo del HTML
+# Evitar caché en HTML
 [[headers]]
-  for = "/"
+  for = "/*"
   [headers.values]
     Cache-Control = "no-store"
