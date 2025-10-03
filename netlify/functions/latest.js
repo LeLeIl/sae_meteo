@@ -3,7 +3,7 @@
 // (Usa fetch global, sin node-fetch)
 exports.handler = async function () {
   try {
-    const BASE = process.env.TTS_BASE || 'https://eu1.cloud.thethings.network';
+    const BASE = process.env.TTS_BASE || 'https://eu1.cloud.thethings.network/console/applications/sma';
     const APP  = process.env.TTS_APP;
     const KEY  = process.env.TTS_KEY; // NNSXS...
     if (!APP || !KEY) {
