@@ -24,23 +24,22 @@ const data = await res.json();
 const last = Array.isArray(data) ? data[0] : (data?.result ? data.result[0] : data);
 const up   = last?.result?.uplink_message || last?.uplink_message || last;
 // puede venir como decoded_payload o payload.fields
-const dec  = up?.decoded_payload || (up?.payload?.fields || {});
-
-const temperature =
-  (typeof dec.temperature === 'number') ? dec.temperature :
-  (typeof dec.data?.temperature === 'number') ? dec.data.temperature :
-  null;
-const humidity =
-  (typeof dec.humidity === 'number') ? dec.humidity :
-  (typeof dec.data?.humidity === 'number') ? dec.data.humidity :
-  null;
+// ... arriba de esto ya tienes res, data, last, up, etc.
+// Puede venir como decoded_payload o como payload.fields
+const dec = up?.decoded_payload || up?.payload?.fields || {};
+// Acepta tanto dec.temperature como dec.data.temperature, y convierte a número
+const tRaw = (dec.temperature !== undefined) ? dec.temperature : dec.data?.temperature;
+const hRaw = (dec.humidity !== undefined) ? dec.humidity : dec.data?.humidity;
+const temperature = (tRaw !== undefined && tRaw !== null && !Number.isNaN(Number(tRaw)))
+  ? Number(tRaw) : null;
+const humidity = (hRaw !== undefined && hRaw !== null && !Number.isNaN(Number(hRaw)))
+  ? Number(hRaw) : null;
 const timeISO = up?.received_at || last?.received_at || new Date().toISOString();
 return {
   statusCode: 200,
   headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
   body: JSON.stringify({ temperature, humidity, timeISO })
 };
-  } catch (err) {
     return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 }
